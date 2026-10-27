@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="kk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Music Video Factory</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#10131c;color:#fff;font-family:Arial,sans-serif}
+main{max-width:850px;margin:auto;padding:28px 18px}
+h1{text-align:center;font-size:30px}
+.sub{text-align:center;color:#aab1c5}
+.panel{background:#1b2030;border:1px solid #343b50;border-radius:16px;padding:22px;margin-top:20px}
+label{display:block;margin:16px 0 8px;font-weight:bold}
+input[type=file],input[type=text]{width:100%;padding:12px;background:#111622;color:#fff;border:1px solid #414b64;border-radius:8px}
+button{padding:13px 18px;border:0;border-radius:9px;background:#8b79ff;color:white;font-weight:bold;cursor:pointer}
+button:disabled{opacity:.45;cursor:not-allowed}
+.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}
+canvas{display:block;width:100%;background:#050505;border-radius:10px;margin-top:18px}
+audio{width:100%;margin-top:14px}
+#status{color:#c7c1ff;line-height:1.6;margin-top:14px}
+small{color:#aab1c5}
+</style>
+</head>
+<body>
+<main>
+<h1>🎬 Music Video Factory</h1>
+<p class="sub">Әніңді жүкте · Суретіңді таңда · Музыкалық видео жаса</p>
+
+<section class="panel">
+<label for="song">🎵 1. MP3 әніңді таңда</label>
+<input id="song" type="file" accept="audio/mpeg,audio/mp3,audio/*">
+<audio id="audio" controls></audio>
+
+<label for="picture">🖼️ 2. Видеоға сурет таңда</label>
+<input id="picture" type="file" accept="image/*">
+
+<label for="title">✍️ 3. Әннің атауы (міндетті емес)</label>
+<input id="title" type="text" placeholder="Мысалы: Қазақ қызы">
+
+<canvas id="canvas" width="1280" height="720"></canvas>
+
+<div class="actions">
+<button id="preview">Суретті көрсету</button>
+<button id="export" disabled>🎥 Видео жасау</button>
+</div>
+
+<p id="status">Алдымен MP3 әнің мен суретіңді таңда.</p>
+<small>Ескерту: бұл алғашқы нұсқа видеоны WebM форматында жасайды. MP4 экспортын келесі кезеңде қосамыз.</small>
+</section>
+</main>
+
+<script>
+const song = document.getElementById('song');
+const picture = document.getElementById('picture');
+const audio = document.getElementById('audio');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const titleInput = document.getElementById('title');
+const exportBtn = document.getElementById('export');
+const status = document.getElementById('status');
+
+let image = null;
+let audioURL = null;
+let imageURL = null;
+let busy = false;
+
+function drawCover() {
+  ctx.fillStyle = '#080a10';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  if (image) {
+    const scale = Math.max(
+      canvas.width / image.width,
+      canvas.height / image.height
+    );
+    const w = image.width * scale;
+    const h = image.height * scale;
+    ctx.drawImage(
+      image,
+      (canvas.width - w) / 2,
+      (canvas.height - h) / 2,
+      w, h
+    );
+
+    const shade = ctx.createLinearGradient(0, 400, 0, 720);
+    shade.addColorStop(0, 'rgba(0,0,0,0)');
+    shade.addColorStop(1, 'rgba(0,0,0,0.75)');
+    ctx.fillStyle = shade;
+    ctx.fillRect(0, 0, 1280, 720);
+  }
+
+  const title = titleInput.value.trim();
+  if (title) {
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#ffffff';
+    ctx.shadowColor = '#000000';
+    ctx.shadowBlur = 8;
+    ctx.font = 'bold 54px Arial';
+    ctx.fillText(title, 640, 625, 1160);
+    ctx.shadowBlur = 0;
+  }
+}
+
+song.addEventListener('change', () => {
+  if (audioURL) URL.revokeObjectURL(audioURL);
+  const file = song.files[0];
+  if (!file) return;
+
+  audioURL = URL.createObjectURL(file);
+  audio.src = audioURL;
+  checkReady();
+  status.textContent = 'Ән таңдалды: ' + file.name;
+});
+
+picture.addEventListener('change', () => {
+  if (imageURL) URL.revokeObjectURL(imageURL);
+  const file = picture.files[0];
+  if (!file) return;
+
+  imageURL = URL.createObjectURL(file);
+  image = new Image();
+
+  image.onload = () => {
+    drawCover();
+    checkReady();
+    status.textContent = 'Сурет дайын! Енді әнмен бірге видео жасай аласың.';
+  };
+
+  image.onerror = () => {
+    image = null;
+    status.textContent = 'Сурет ашылмады. Басқа суретті таңдап көр.';
+  };
+
+  image.src = imageURL;
+});
+
+titleInput.addEventListener('input', drawCover);
+document.getElementById('preview').addEventListener('click', drawCover);
+
+function checkReady() {
+  exportBtn.disabled = !(song.files.length && image && !busy);
+}
+
+exportBtn.addEventListener('click', async () => {
+  if (!song.files.length || !image || busy) return;
+
+  if (!canvas.captureStream || !audio.captureStream) {
+    status.textContent = 'Бұл браузер видео жазуды қолдамайды. Компьютердегі Chrome браузерін қолданып көр.';
+    return;
+  }
+
+  if (!window.MediaRecorder) {
+    status.textContent = 'Браузер видео экспортын қолдамайды.';
+    return;
+  }
+
+  busy = true;
+  checkReady();
+  drawCover();
+
+  let recorder;
+  let stream;
+  let audioStream;
+
+  try {
+    audio.pause();
+    audio.currentTime = 0;
+    await audio.play();
+    audio.pause();
+    audio.currentTime = 0;
+
+    const videoStream = canvas.captureStream(30);
+    audioStream = audio.captureStream();
+
+    stream = new MediaStream([
+      ...videoStream.getVideoTracks(),
+      ...audioStream.getAudioTracks()
+    ]);
+
+    const mime = [
+      'video/webm;codecs=vp9,opus',
+      'video/webm;codecs=vp8,opus',
+      'video/webm'
+    ].find(type => MediaRecorder.isTypeSupported(type));
+
+    if (!mime) throw new Error('Бұл браузер WebM жазуды қолдамайды.');
+
+    const chunks = [];
+    recorder = new MediaRecorder(stream, { mimeType: mime });
+
+    recorder.ondataavailable = event => {
+      if (event.data.size > 0) chunks.push(event.data);
+    };
+
+    recorder.onerror = () => {
+      status.textContent = 'Видео жазу кезінде қате шықты. Қайта байқап көр.';
+      cleanup();
+    };
+
+    function cleanup() {
+      stream?.getTracks().forEach(track => track.stop());
+      audioStream?.getTracks().forEach(track => track.stop());
+      busy = false;
+      checkReady();
+    }
+
+    recorder.onstop = () => {
+      const blob = new Blob(chunks, { type: mime });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'music-video.webm';
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      status.textContent = 'Дайын! Видео компьютеріңе жүктелді. MP4 нұсқасын келесі кезеңде жасаймыз.';
+      cleanup();
+    };
+
+    recorder.start(1000);
+    status.textContent = 'Видео жазылып жатыр... Әннің соңына дейін күте тұр.';
+    await audio.play();
+
+    audio.onended = () => {
+      if (recorder && recorder.state !== 'inactive') recorder.stop();
+    };
+
+  } catch (error) {
+    stream?.getTracks().forEach(track => track.stop());
+    audioStream?.getTracks().forEach(track => track.stop());
+    busy = false;
+    checkReady();
+    status.textContent = 'Қате: ' + error.message;
+  }
+});
+
+drawCover();
+</script>
+</body>
+</html>
